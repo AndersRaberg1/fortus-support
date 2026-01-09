@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8">
+  <title>FortusPay Chat</title>
+</head>
+<body>
+  <h1>Support Chat</h1>
+  <input type="text" id="message" placeholder="Skriv meddelande...">
+  <button onclick="sendMessage()">Skicka</button>
+  <div id="response"></div>
+  <script>
+    async function sendMessage() {
+      const msg = document.getElementById('message').value;
+      try {
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: msg })
+        });
+        const data = await res.json();
+        document.getElementById('response').innerText = data.reply || 'Fel: ' + data.error;
+      } catch (err) {
+        document.getElementById('response').innerText = 'Fel: Kunde inte hämta svar.';
+      }
+    }
+  </script>
+</body>
+</html>
