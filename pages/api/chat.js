@@ -9,19 +9,23 @@ export async function POST(req) {
     console.log('Parsad body:', JSON.stringify(body, null, 2));
     const { message } = body;
 
-    // Initiera Groq-klient
-    const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+    // Kontrollera env-var
+    const apiKey = process.env.GROQ_API_KEY;
+    console.log('GROQ_API_KEY exists:', !!apiKey);
 
-    // Generera AI-svar med Groq
+    // Initiera Groq-klient
+    const groq = new Groq({ apiKey });
+
+    // Generera AI-svar
     const completion = await groq.chat.completions.create({
       messages: [
         { role: "system", content: "Du är en hjälpsam support-AI för FortusPay. Svara vänligt på svenska." },
         { role: "user", content: message },
       ],
-      model: "mixtral-8x7b-32768", // Eller annan modell från Groq
+      model: "mixtral-8x7b-32768",
     });
 
-    const aiReply = completion.choices[0].message.content;
+    const aiReply = completion.choices[0].message.content || 'Inget svar från AI.';
     console.log('AI-svar från Groq:', aiReply);
 
     console.log('=== API-anrop lyckades ===');
@@ -30,6 +34,6 @@ export async function POST(req) {
     console.error('=== FEL I API ===');
     console.error('Error message:', error.message);
     console.error('Error stack:', error.stack);
-    return NextResponse.json({ error: 'Internt serverfel' }, { status: 500 });
+    return NextResponse.json({ error: 'Internt serverfel: ' + error.message }, { status: 500 });
   }
 }
