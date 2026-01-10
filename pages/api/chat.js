@@ -2,9 +2,9 @@ import { NextResponse } from 'next/server';
 import Groq from 'groq-sdk';
 
 export default async function handler(req, res) {
-  console.log('=== API-anrop startat: ' + req.method + ' /api/chat ===');
-
   if (req.method === 'POST') {
+    console.log('=== API-anrop startat: POST /api/chat ===');
+
     try {
       const body = req.body;
       console.log('Parsad body:', JSON.stringify(body, null, 2));
