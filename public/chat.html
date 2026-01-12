@@ -65,7 +65,7 @@
         const response = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ messages: conversationHistory }) // Skicka hela historiken
+          body: JSON.stringify({ messages: conversationHistory })
         });
 
         const data = await response.json();
@@ -74,7 +74,7 @@
 
         if (response.ok && data.answer) {
           addMessage(data.answer, 'bot');
-          conversationHistory.push({ role: 'assistant', content: data.answer }); // Lägg till för nästa request
+          conversationHistory.push({ role: 'assistant', content: data.answer });
         } else {
           const errorText = data.error || data.details || 'Okänt fel';
           addMessage('Fel: ' + errorText, 'bot');
