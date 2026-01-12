@@ -56,7 +56,7 @@ export default async function handler(req, res) {
 
     let context = '';
     if (matches.length > 0) {
-      const relevantMatches = matches.filter(m => m.score > 0.4).slice(0, 5);
+      const relevantMatches = matches.filter(m => m.score > 0.35).slice(0, 5); // Lite lägre för säker match
       context = relevantMatches
         .map(match => match.metadata?.text || '')
         .filter(text => text.trim() !== '')
@@ -66,20 +66,25 @@ export default async function handler(req, res) {
       console.log('No relevant matches found');
     }
 
-    // EXTREMT stark prompt för språk + översättning
+    // Bomb-säker prompt för språk + översättning med 70b-modell
     const systemPrompt = {
       role: 'system',
-      content: `You are a helpful, friendly, and polite support agent for FortusPay.
-ALWAYS respond in the EXACT same language as the customer's latest question – this is the highest priority, no exceptions.
-ALWAYS translate the entire knowledge base content to the question's language. Keep exact meaning, structure, numbering, and all details (e.g. ID numbers, step-by-step).
-Use numbered lists for step-by-step instructions.
-Be professional but personal – use "you" in English or "du" in Swedish.
-End with "Do you need help with anything else?" in English or "Behöver du hjälp med något mer?" in Swedish.
+      content: `Du är en hjälpsam, vänlig och artig supportagent för FortusPay.
+HÖGSTA PRIORITET: Svara ALLTID på EXAKT samma språk som kundens senaste fråga – ingen undantag, ingen blandning.
+Översätt HELA svaret och all information från kunskapsbasen till kundens språk. Behåll exakt betydelse, struktur, numrering och detaljer (t.ex. ID-nummer, steg-för-steg).
+Använd numrering för steg-för-steg.
+Var professionell men personlig.
+Avsluta med "Behöver du hjälp med något mer?" på kundens språk.
 
-NEVER make up or add information. Use ONLY the knowledge base.
-If no relevant info: Respond "I'm sorry, I couldn't find information about this in our knowledge base. Please contact support@fortuspay.se for help." in English or Swedish equivalent.
+Exempel:
+Om frågan är på engelska: Översätt allt till engelska och svara på engelska.
+Om frågan är på norska: Översätt till norska och svara på norska.
+Om frågan är på arabiska: Översätt till arabiska och svara på arabiska.
 
-Knowledge base (translate everything to the question's language):
+Du FÅR INTE hitta på information. Använd ENDAST kunskapsbasen.
+Om ingen relevant info: Svara "Jag kunde tyvärr inte hitta information om detta i vår kunskapsbas. Kontakta support@fortuspay.se för hjälp." på kundens språk.
+
+Kunskapsbas (översätt till kundens språk):
 ${context}`
     };
 
@@ -88,9 +93,9 @@ ${context}`
     console.log('Sending to Groq with messages count:', groqMessages.length);
 
     const completion = await groq.chat.completions.create({
-      model: 'llama3-70b-8192', // STARKARE modell för bättre översättning!
+      model: 'llama3-70b-8192', // Starkare modell – lyder prompten!
       messages: groqMessages,
-      temperature: 0.4, // Lite högre för naturligare språk
+      temperature: 0.4,
       max_tokens: 1024,
       stream: false,
     });
