@@ -1,68 +1,116 @@
-import { HfInference } from '@huggingface/inference';
 import { Pinecone } from '@pinecone-database/pinecone';
+import { Groq } from 'groq-sdk';
+import { HfInference } from '@huggingface/inference';
+
+const pinecone = new Pinecone({
+  apiKey: process.env.PINECONE_API_KEY,
+});
+
+const hf = new HfInference(process.env.HF_TOKEN);
+
+const groq = new Groq({
+  apiKey: process.env.GROQ_API_KEY,
+});
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { message } = req.body || {};
+  const { message } = req.body;
+
+  if (!message || message.trim() === '') {
+    return res.status(400).json({ error: 'Message is required' });
+  }
 
   try {
-    console.log('Chat request:', message);
+    console.log('Received message:', message);
 
-    const hf = new HfInference(process.env.HUGGINGFACE_API_KEY);
-    const pinecone = new Pinecone({ apiKey: process.env.PINECONE_API_KEY });
-    const index = pinecone.Index(process.env.PINECONE_INDEX_NAME || 'fortus-support-hf');
-
-    console.log('Embedding message...');
-    const embeddingResponse = await hf.featureExtraction({
-      model: 'sentence-transformers/all-MiniLM-L6-v2',
+    // Generera embedding för frågan med samma modell som vid upload
+    console.log('Generating query embedding...');
+    const queryEmbeddingResponse = await hf.featureExtraction({
+      model: 'sentence-transformers/all-MiniLM-L6-v2', // 384 dim, samma som vid upload
       inputs: message,
     });
-    const queryEmbedding = Array.from(embeddingResponse);
-    console.log('Embedding length:', queryEmbedding.length);
 
-    console.log('Querying Pinecone...');
+    // Konvertera till float array
+    const queryEmbedding = Array.from(queryEmbeddingResponse);
+
+    console.log('Query embedding length:', queryEmbedding.length); // ska vara 384
+
+    // Hämta Pinecone index
+    const indexName = process.env.PINECONE_INDEX_NAME;
+    console.log('Using Pinecone index:', indexName);
+
+    const index = pinecone.index(indexName);
+
+    // Query Pinecone
     const queryResponse = await index.query({
       vector: queryEmbedding,
-      topK: 5,
+      topK: 10, // Ökat temporärt för debug
       includeMetadata: true,
+      // includeValues: true, // Uncomment om du vill se vektorer
     });
 
-    console.log('Matches found:', queryResponse.matches.length);
-    const context = queryResponse.matches
-      .map(m => m.metadata.text || '')
-      .join('\n\n') || 'Ingen relevant kunskap hittades.';
+    const matches = queryResponse.matches || [];
+    console.log('Raw Pinecone response:', JSON.stringify(queryResponse, null, 2));
+    console.log('Number of matches found:', matches.length);
 
-    console.log('Context length:', context.length);
+    let context = '';
+    if (matches.length > 0) {
+      // Ta de 5 bästa (eller alla om färre)
+      const topMatches = matches.slice(0, 5);
+      context = topMatches
+        .map((match, i) => {
+          console.log(`Match ${i + 1} score:`, match.score);
+          console.log(`Match ${i + 1} metadata preview:`, match.metadata?.text?.substring(0, 200));
+          return match.metadata?.text || '';
+        })
+        .filter(text => text.trim() !== '')
+        .join('\n\n');
 
-    const prompt = `Du är en hjälpsam support-AI för FortusPay. Använd ENDAST denna kunskap för svaret (inga påhitt): ${context}\n\nFråga: ${message}\nSvara på svenska, kort och stegvis.`;
-
-    console.log('Sending to Groq...');
-    const groqResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'llama-3.1-8b-instant',
-        messages: [{ role: 'user', content: prompt }],
-      }),
-    });
-
-    if (!groqResponse.ok) {
-      throw new Error('Groq API fel');
+      console.log('Final context length sent to Groq:', context.length);
+    } else {
+      console.log('No matches returned – possible causes: index name, embedding mismatch, or empty index');
+      console.log('Final context length sent to Groq: 0 (no context)');
     }
 
-    const data = await groqResponse.json();
-    const reply = data.choices[0]?.message?.content?.trim() || 'Inget svar från AI (tom context).';
+    // Bygg prompt till Groq
+    const systemPrompt = `Du är en hjälpsam och vänlig supportagent för FortusPay. 
+Använd ENDAST information från följande kunskapsbas för att svara. 
+Om frågan inte kan besvaras med denna information, säg "Jag kunde tyvärr inte hitta information om detta i vår kunskapsbas. Kontakta support@fortuspay.se för hjälp."
 
-    console.log('Reply:', reply);
-    res.status(200).json({ response: reply });
+Kunskapsbas:
+${context}
+
+Svara kort, tydligt och på svenska.`;
+
+    console.log('Sending to Groq...');
+
+    const completion = await groq.chat.completions.create({
+      model: 'llama-3.1-8b-instant',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: message },
+      ],
+      temperature: 0.3,
+      max_tokens: 1024,
+      stream: false,
+    });
+
+    const answer = completion.choices[0]?.message?.content || 'Inget svar från modellen.';
+
+    console.log('Groq response:', answer.substring(0, 500));
+
+    res.status(200).json({ answer });
   } catch (error) {
-    console.error('RAG error:', error);
-    res.status(500).json({ error: 'Fel vid RAG: ' + (error.message || 'Okänt fel') });
+    console.error('Error in chat API:', error);
+    res.status(500).json({ error: 'Internal server error', details: error.message });
   }
 }
+
+export const config = {
+  api: {
+    bodyParser: true,
+  },
+};
