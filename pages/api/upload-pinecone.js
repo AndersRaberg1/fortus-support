@@ -1,3 +1,4 @@
+import { HfInference } from '@huggingface/inference';
 import { Pinecone } from '@pinecone-database/pinecone';
 import { v4 as uuid } from 'uuid';
 
@@ -7,6 +8,7 @@ export default async function handler(req, res) {
   }
 
   try {
+    const hf = new HfInference(process.env.HUGGINGFACE_API_KEY);
     const pinecone = new Pinecone({ apiKey: process.env.PINECONE_API_KEY });
     const index = pinecone.Index('fortus-support');
 
@@ -20,14 +22,22 @@ export default async function handler(req, res) {
       { keyword: 'Fortus Web POS', text: 'Lägg till / Redigera kvittotexter och bild: Texter som redigeras visas i toppen och/eller foten på kvittot. Gå till: Butiker -> Hantera Butiker -> Välj Butik. Klicka på den butik du vill redigera. Scrolla ned till sektionen Inställningar kassa. Fyll i de texter du vill använda, t.ex. öppettider. Testa resultatet: Logga in på kassan. Sätt kassan i övningsläge. Genomför ett kontantköp för att se hur kvittolayouten ser ut. Tips för att formatera kvittotexten.' },
     ];
 
-    const records = chunks.map(chunk => ({
-      id: uuid(),
-      metadata: { keyword: chunk.keyword, text: chunk.text },
-      text: chunk.text  // Pinecone embeddar automatiskt!
-    }));
+    const vectors = [];
+    for (const chunk of chunks) {
+      const response = await hf.featureExtraction({
+        model: 'sentence-transformers/all-MiniLM-L6-v2',
+        inputs: chunk.text,
+      });
+      const embedding = Array.from(response);  // Konvertera till array
+      vectors.push({
+        id: uuid(),
+        values: embedding,
+        metadata: { keyword: chunk.keyword, text: chunk.text }
+      });
+    }
 
-    await index.upsert(records);
-    res.status(200).json({ message: `Uppladdat ${records.length} chunks framgångsrikt med integrerad embedding!` });
+    await index.upsert(vectors);
+    res.status(200).json({ message: `Uppladdat ${vectors.length} chunks med HuggingFace embeddings framgångsrikt!` });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: error.message });
