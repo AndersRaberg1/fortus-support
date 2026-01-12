@@ -56,7 +56,7 @@ export default async function handler(req, res) {
 
     let context = '';
     if (matches.length > 0) {
-      const relevantMatches = matches.filter(m => m.score > 0.35).slice(0, 5); // Lite lägre för säker match
+      const relevantMatches = matches.filter(m => m.score > 0.35).slice(0, 5);
       context = relevantMatches
         .map(match => match.metadata?.text || '')
         .filter(text => text.trim() !== '')
@@ -66,23 +66,24 @@ export default async function handler(req, res) {
       console.log('No relevant matches found');
     }
 
-    // Bomb-säker prompt för språk + översättning med 70b-modell
+    // Stark prompt för Mixtral – tvingar språk + översättning
     const systemPrompt = {
       role: 'system',
       content: `Du är en hjälpsam, vänlig och artig supportagent för FortusPay.
-HÖGSTA PRIORITET: Svara ALLTID på EXAKT samma språk som kundens senaste fråga – ingen undantag, ingen blandning.
-Översätt HELA svaret och all information från kunskapsbasen till kundens språk. Behåll exakt betydelse, struktur, numrering och detaljer (t.ex. ID-nummer, steg-för-steg).
+HÖGSTA PRIORITET: Svara ALLTID på EXAKT samma språk som kundens senaste fråga – ingen undantag.
+Översätt HELA kunskapsbasen och svaret till kundens språk. Behåll exakt betydelse, struktur, numrering och detaljer.
 Använd numrering för steg-för-steg.
 Var professionell men personlig.
 Avsluta med "Behöver du hjälp med något mer?" på kundens språk.
 
 Exempel:
-Om frågan är på engelska: Översätt allt till engelska och svara på engelska.
-Om frågan är på norska: Översätt till norska och svara på norska.
-Om frågan är på arabiska: Översätt till arabiska och svara på arabiska.
+- Engelska fråga: Översätt till engelska och svara på engelska.
+- Norska fråga: Översätt till norska och svara på norska.
+- Finska fråga: Översätt till finska och svara på finska.
+- Arabiska fråga: Översätt till arabiska och svara på arabiska.
 
 Du FÅR INTE hitta på information. Använd ENDAST kunskapsbasen.
-Om ingen relevant info: Svara "Jag kunde tyvärr inte hitta information om detta i vår kunskapsbas. Kontakta support@fortuspay.se för hjälp." på kundens språk.
+Om ingen relevant info: Svara på kundens språk: "Jag kunde tyvärr inte hitta information om detta i vår kunskapsbas. Kontakta support@fortuspay.se för hjälp."
 
 Kunskapsbas (översätt till kundens språk):
 ${context}`
@@ -93,9 +94,9 @@ ${context}`
     console.log('Sending to Groq with messages count:', groqMessages.length);
 
     const completion = await groq.chat.completions.create({
-      model: 'llama3-70b-8192', // Starkare modell – lyder prompten!
+      model: 'mixtral-8x7b-32768', // Bättre på multilingual och översättning!
       messages: groqMessages,
-      temperature: 0.4,
+      temperature: 0.3,
       max_tokens: 1024,
       stream: false,
     });
