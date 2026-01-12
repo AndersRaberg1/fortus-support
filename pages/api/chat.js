@@ -1,7 +1,9 @@
 import { Pinecone } from '@pinecone-database/pinecone';
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).end();
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
 
   const { message } = req.body;
 
@@ -9,21 +11,27 @@ export default async function handler(req, res) {
     const pinecone = new Pinecone({ apiKey: process.env.PINECONE_API_KEY });
     const index = pinecone.Index('fortus-support');
 
-    // Embed query med samma modell
-    const embedResponse = await pinecone.inference.embed('llama-text-embed-v2', [message], { input_type: 'query' });
+    // Embed query med rätt parameter
+    const embedResponse = await pinecone.inference.embed(
+      'llama-text-embed-v2',
+      [message],
+      { input_type: 'query' }  // Krävs för query
+    );
     const queryEmbedding = embedResponse.data[0].values;
 
     // Query Pinecone
     const queryResponse = await index.query({
       vector: queryEmbedding,
       topK: 5,
-      includeMetadata: true
+      includeMetadata: true,
     });
 
-    const context = queryResponse.matches.map(m => m.metadata.text || '').join('\n\n');
+    const context = queryResponse.matches
+      .map(m => m.metadata.text || '')
+      .join('\n\n');
 
-    // Prompt med context (tvinga användning)
-    const prompt = `Du är support för FortusPay. Använd ENDAST denna kunskap för svaret (inga påhitt): ${context || 'Ingen relevant kunskap hittades.'}\nFråga: ${message}\nSvara på svenska, kort och stegvis.`;
+    // Prompt (tvingar användning av context)
+    const prompt = `Du är support för FortusPay. Använd ENDAST denna kunskap (inga påhitt eller externa steg): ${context || 'Ingen relevant kunskap hittades.'}\n\nFråga: ${message}\nSvara på svenska, kort och stegvis.`;
 
     // Groq
     const groqResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -44,6 +52,6 @@ export default async function handler(req, res) {
     res.status(200).json({ response: reply });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: 'Fel vid RAG' });
+    res.status(500).json({ error: 'Fel vid RAG: ' + error.message });
   }
 }
