@@ -10,7 +10,7 @@ export default async function handler(req, res) {
     const pinecone = new Pinecone({ apiKey: process.env.PINECONE_API_KEY });
     const index = pinecone.Index('fortus-support');
 
-    console.log('Starting upload...');
+    console.log('Startar uppladdning...');
 
     const chunks = [
       { keyword: 'Faktura, delbetalning', text: 'För att använda Faktura via Fortus som betalmetod för er webshop, POS eller affärssystem följ dessa steg: Kontakta Fortus. Ring in till oss på 010 – 222 15 20 eller skicka e-post via till support@fortuspay.com. Signera Fakturaköpsavtal. Avtal skickas till er via oneflow. När detta är signerat så sätts ni upp i systemet inom 24 timmar. Betalalternativ aktiveras i systemet. Fortus aktiverar fakturaknappen för er. När detta är klart kan ni börja skicka fakturor via Fortus till era kunder.' },
@@ -26,11 +26,11 @@ export default async function handler(req, res) {
 
     const vectors = [];
     for (const chunk of chunks) {
-      console.log(`Embeddar chunk för ${chunk.keyword}`);
+      console.log(`Embeddar chunk för keyword: ${chunk.keyword}`);
       const embedResponse = await pinecone.inference.embed(
         'llama-text-embed-v2',
         [chunk.text],
-        { input_type: 'passage' }
+        { input_type: 'passage' }  // Detta löser felet!
       );
       const embedding = embedResponse.data[0].values;
       vectors.push({
@@ -40,11 +40,11 @@ export default async function handler(req, res) {
       });
     }
 
-    console.log(`Antal vektorer: ${vectors.length}`);
+    console.log(`Antal vektorer skapade: ${vectors.length}`);
     await index.upsert(vectors);
     res.status(200).json({ message: `Uppladdat ${vectors.length} chunks till Pinecone framgångsrikt!` });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: error.message || 'Okänt fel' });
+    res.status(500).json({ error: error.message || 'Okänt fel vid uppladdning' });
   }
 }
