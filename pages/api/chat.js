@@ -15,7 +15,7 @@ export default async function handler(req, res) {
     const embedResponse = await pinecone.inference.embed(
       'llama-text-embed-v2',
       [message],
-      { input_type: 'query' }  // Krävs för query
+      { input_type: 'query' }  // Fixar felet!
     );
     const queryEmbedding = embedResponse.data[0].values;
 
@@ -28,12 +28,12 @@ export default async function handler(req, res) {
 
     const context = queryResponse.matches
       .map(m => m.metadata.text || '')
-      .join('\n\n');
+      .join('\n\n') || 'Ingen relevant kunskap hittades.';
 
-    // Prompt (tvingar användning av context)
-    const prompt = `Du är support för FortusPay. Använd ENDAST denna kunskap (inga påhitt eller externa steg): ${context || 'Ingen relevant kunskap hittades.'}\n\nFråga: ${message}\nSvara på svenska, kort och stegvis.`;
+    // Prompt som tvingar användning av context
+    const prompt = `Du är en hjälpsam support-AI för FortusPay. Använd ENDAST denna kunskap för svaret (inga påhittade steg eller externa länkar): ${context}\n\nFråga: ${message}\nSvara på svenska, kort och stegvis.`;
 
-    // Groq
+    // Groq-generation
     const groqResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
