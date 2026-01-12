@@ -1,90 +1,114 @@
-<!DOCTYPE html>
-<html lang="sv">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>FortusPay Support Chat</title>
-  <style>
-    body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
-    #chat-container { max-width: 800px; margin: auto; background: white; border-radius: 10px; box-shadow: 0 0 10px rgba(0,0,0,0.1); overflow: hidden; }
-    #messages { height: 60vh; overflow-y: auto; padding: 20px; }
-    .message { margin: 10px 0; padding: 10px 15px; border-radius: 10px; max-width: 80%; }
-    .user { background: #007bff; color: white; align-self: flex-end; margin-left: auto; }
-    .bot { background: #e9ecef; color: black; align-self: flex-start; }
-    #input-area { display: flex; padding: 20px; background: #f1f1f1; }
-    #user-input { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 5px; }
-    button { padding: 10px 20px; background: #007bff; color: white; border: none; border-radius: 5px; margin-left: 10px; cursor: pointer; }
-    .error { color: red; font-weight: bold; }
-  </style>
-</head>
-<body>
-  <div id="chat-container">
-    <div id="messages"></div>
-    <div id="input-area">
-      <input type="text" id="user-input" placeholder="Skriv din fråga här..." />
-      <button onclick="sendMessage()">Skicka</button>
-    </div>
-  </div>
+import { Pinecone } from '@pinecone-database/pinecone';
+import { Groq } from 'groq-sdk';
+import { HfInference } from '@huggingface/inference';
 
-  <script>
-    const messagesDiv = document.getElementById('messages');
-    const userInput = document.getElementById('user-input');
+const pinecone = new Pinecone({
+  apiKey: process.env.PINECONE_API_KEY,
+});
 
-    function addMessage(text, sender) {
-      const msg = document.createElement('div');
-      msg.classList.add('message', sender);
-      // Konvertera \n till <br> för nya rader
-      msg.innerHTML = text.replace(/\n/g, '<br>');
-      messagesDiv.appendChild(msg);
-      messagesDiv.scrollTop = messagesDiv.scrollHeight;
-    }
+const hf = new HfInference(process.env.HF_TOKEN);
 
-    async function sendMessage() {
-      const message = userInput.value.trim();
-      if (!message) return;
+const groq = new Groq({
+  apiKey: process.env.GROQ_API_KEY,
+});
 
-      addMessage(message, 'user');
-      userInput.value = '';
+export default async function handler(req, res) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
 
-      // Visa "tänker..." tillfälligt
-      const thinkingMsg = document.createElement('div');
-      thinkingMsg.classList.add('message', 'bot');
-      thinkingMsg.textContent = 'Tänker...';
-      messagesDiv.appendChild(thinkingMsg);
-      messagesDiv.scrollTop = messagesDiv.scrollHeight;
+  const { messages } = req.body; // Nu tar vi emot en array av messages
 
-      try {
-        console.log('Sending:', message);
-        const response = await fetch('/api/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message })
-        });
+  if (!messages || !Array.isArray(messages) || messages.length === 0) {
+    return res.status(400).json({ error: 'Messages array is required' });
+  }
 
-        const data = await response.json();
-        console.log('Raw response:', data);
+  // Hitta senaste user-meddelandet för RAG-query
+  const latestUserMessage = [...messages].reverse().find(m => m.role === 'user')?.content || '';
+  
+  if (!latestUserMessage.trim()) {
+    return res.status(400).json({ error: 'No user message found' });
+  }
 
-        // Rensa "tänker..."
-        thinkingMsg.remove();
+  try {
+    console.log('Received messages count:', messages.length);
+    console.log('Latest user message for RAG:', latestUserMessage);
 
-        if (response.ok && data.answer) {
-          addMessage(data.answer, 'bot');
-        } else {
-          const errorText = data.error || data.details || 'Okänt fel (status: ' + response.status + ')';
-          addMessage('Fel: ' + errorText, 'bot');
-          console.error('API error:', errorText);
-        }
-      } catch (err) {
-        thinkingMsg.remove();
-        addMessage('Fel: Kan inte ansluta till servern – ' + err.message, 'bot');
-        console.error('Fetch error:', err);
-      }
-    }
-
-    // Enter för att skicka
-    userInput.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') sendMessage();
+    // Generera embedding bara för senaste frågan
+    const queryEmbeddingResponse = await hf.featureExtraction({
+      model: 'sentence-transformers/all-MiniLM-L6-v2',
+      inputs: latestUserMessage,
     });
-  </script>
-</body>
-</html>
+
+    const queryEmbedding = Array.from(queryEmbeddingResponse);
+    console.log('Query embedding length:', queryEmbedding.length);
+
+    const indexName = process.env.PINECONE_INDEX_NAME;
+    console.log('Using Pinecone index:', indexName);
+    const index = pinecone.index(indexName);
+
+    const queryResponse = await index.query({
+      vector: queryEmbedding,
+      topK: 5, // Sänkt tillbaka nu när det funkar
+      includeMetadata: true,
+    });
+
+    const matches = queryResponse.matches || [];
+    console.log('Number of matches found:', matches.length);
+
+    let context = '';
+    if (matches.length > 0) {
+      const relevantMatches = matches.filter(m => m.score > 0.4).slice(0, 5); // Threshold för kvalitet
+      context = relevantMatches
+        .map(match => match.metadata?.text || '')
+        .filter(text => text.trim() !== '')
+        .join('\n\n');
+      console.log('Final context length:', context.length);
+    } else {
+      console.log('No relevant matches found');
+    }
+
+    // Uppdaterad systemprompt – språk, artighet, avslutningsfråga
+    const systemPrompt = {
+      role: 'system',
+      content: `Du är en hjälpsam, vänlig och artig supportagent för FortusPay.
+Svara ALLTID på samma språk som kundens senaste fråga.
+Var professionell men personlig – använd "du" och var trevlig.
+Avsluta gärna med "Behöver du hjälp med något mer?" när det passar.
+Använd ENDAST information från kunskapsbasen nedan för att svara.
+Om du inte hittar svar: "Jag kunde tyvärr inte hitta information om detta i vår kunskapsbas. Kontakta support@fortuspay.se för hjälp."
+
+Kunskapsbas:
+${context}`
+    };
+
+    // Bygg messages till Groq: system + historik + context injiceras i system
+    const groqMessages = [systemPrompt, ...messages];
+
+    console.log('Sending to Groq with messages count:', groqMessages.length);
+
+    const completion = await groq.chat.completions.create({
+      model: 'llama-3.1-8b-instant',
+      messages: groqMessages,
+      temperature: 0.3,
+      max_tokens: 1024,
+      stream: false,
+    });
+
+    const answer = completion.choices[0]?.message?.content || 'Inget svar från modellen.';
+
+    console.log('Groq response:', answer.substring(0, 500));
+
+    // Lägg till assistant-svar i historiken för frontend (valfritt, men smidigt)
+    res.status(200).json({ answer });
+  } catch (error) {
+    console.error('Error in chat API:', error);
+    res.status(500).json({ error: 'Internal server error', details: error.message });
+  }
+}
+
+export const config = {
+  api: {
+    bodyParser: true,
+  },
+};
