@@ -11,30 +11,24 @@ export default async function handler(req, res) {
   try {
     const hf = new HfInference(process.env.HUGGINGFACE_API_KEY);
     const pinecone = new Pinecone({ apiKey: process.env.PINECONE_API_KEY });
-    const index = pinecone.Index('fortus-support');
+    const index = pinecone.Index(process.env.PINECONE_INDEX_NAME || 'fortus-support-hf');
 
-    // Embed message med HF
     const response = await hf.featureExtraction({
       model: 'sentence-transformers/all-MiniLM-L6-v2',
       inputs: message,
     });
     const queryEmbedding = Array.from(response);
 
-    // Query Pinecone
     const queryResponse = await index.query({
       vector: queryEmbedding,
       topK: 5,
       includeMetadata: true,
     });
 
-    const context = queryResponse.matches
-      .map(m => m.metadata.text || '')
-      .join('\n\n') || 'Ingen relevant kunskap hittades.';
+    const context = queryResponse.matches.map(m => m.metadata.text || '').join('\n\n') || 'Ingen relevant kunskap hittades.';
 
-    // Prompt
-    const prompt = `Du är en hjälpsam support-AI för FortusPay. Använd ENDAST denna kunskap för svaret (inga påhitt): ${context}\n\nFråga: ${message}\nSvara på svenska, kort och stegvis.`;
+    const prompt = `Du är en hjälpsam support-AI för FortusPay. Använd ENDAST denna kunskap (inga påhitt): ${context}\n\nFråga: ${message}\nSvara på svenska, kort och stegvis.`;
 
-    // Groq
     const groqResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -48,7 +42,7 @@ export default async function handler(req, res) {
     });
 
     const data = await groqResponse.json();
-    const reply = data.choices[0].message.content;
+    const reply = data.choices[0].message.content || 'Inget svar från AI.';
 
     res.status(200).json({ response: reply });
   } catch (error) {
