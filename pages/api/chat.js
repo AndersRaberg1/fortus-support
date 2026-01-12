@@ -33,13 +33,14 @@ export default async function handler(req, res) {
     console.log('Received messages count:', messages.length);
     console.log('Latest user message for RAG:', latestUserMessage);
 
+    // Ny multilingual model + "query: " prefix
     const queryEmbeddingResponse = await hf.featureExtraction({
-      model: 'sentence-transformers/all-MiniLM-L6-v2',
-      inputs: latestUserMessage,
+      model: 'intfloat/multilingual-e5-large',
+      inputs: `query: ${latestUserMessage}`,
     });
 
     const queryEmbedding = Array.from(queryEmbeddingResponse);
-    console.log('Query embedding length:', queryEmbedding.length);
+    console.log('Query embedding length:', queryEmbedding.length); // Ska vara 1024
 
     const indexName = process.env.PINECONE_INDEX_NAME;
     console.log('Using Pinecone index:', indexName);
@@ -56,8 +57,7 @@ export default async function handler(req, res) {
 
     let context = '';
     if (matches.length > 0) {
-      // Lägre threshold temporärt för att fånga engelska frågor bättre
-      const relevantMatches = matches.filter(m => m.score > 0.35).slice(0, 5);
+      const relevantMatches = matches.filter(m => m.score > 0.4).slice(0, 5);
       context = relevantMatches
         .map(match => match.metadata?.text || '')
         .filter(text => text.trim() !== '')
@@ -67,7 +67,6 @@ export default async function handler(req, res) {
       console.log('No relevant matches found');
     }
 
-    // Starkare prompt för att undvika hallucinationer + bättre språk/översättning
     const systemPrompt = {
       role: 'system',
       content: `Du är en hjälpsam, vänlig och artig supportagent för FortusPay.
