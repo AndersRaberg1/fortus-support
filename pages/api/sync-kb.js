@@ -12,7 +12,7 @@ const hf = new HfInference(process.env.HF_TOKEN);
 
 async function syncKB() {
   try {
-    // Dynamisk import – fixar bundling-felet för google-spreadsheet
+    // DYNAMISK IMPORT – detta fixar build-felet helt
     const { GoogleSpreadsheet } = await import('google-spreadsheet');
 
     const doc = new GoogleSpreadsheet('1DskBGn-cvbEn30NKBpyeueOvowB8-YagnTACz9LIChk');
