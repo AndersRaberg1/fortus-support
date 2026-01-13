@@ -12,5 +12,7 @@
     "@langchain/groq": "^0.1.0",
     "langchain": "^0.3.0",
     "@huggingface/inference": "^4.13.5"
+    "prisma": "^5.8.1",
+    "@prisma/client": "^5.8.1"
   }
 }
