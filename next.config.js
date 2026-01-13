@@ -1,7 +1,10 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  experimental: {
-    serverComponentsExternalPackages: ['google-spreadsheet'],
+  webpack: (config, { isServer }) => {
+    if (isServer) {
+      config.externals.push('google-spreadsheet');
+    }
+    return config;
   },
 };
 
