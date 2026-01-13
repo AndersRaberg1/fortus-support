@@ -56,7 +56,7 @@ export default async function handler(req, res) {
 
     let context = '';
     if (matches.length > 0) {
-      const relevantMatches = matches.filter(m => m.score > 0.35).slice(0, 5);
+      const relevantMatches = matches.filter(m => m.score > 0.4).slice(0, 5);
       context = relevantMatches
         .map(match => match.metadata?.text || '')
         .filter(text => text.trim() !== '')
@@ -66,26 +66,23 @@ export default async function handler(req, res) {
       console.log('No relevant matches found');
     }
 
-    // Stark prompt för Mixtral – tvingar språk + översättning
     const systemPrompt = {
       role: 'system',
       content: `Du är en hjälpsam, vänlig och artig supportagent för FortusPay.
-HÖGSTA PRIORITET: Svara ALLTID på EXAKT samma språk som kundens ALLRA SENASTE meddelande – utan något undantag.
-Översätt HELA kunskapsbasen och svaret till kundens språk. Behåll exakt betydelse, struktur, numrering och detaljer.
-Använd numrering för steg-för-steg.
-Var professionell men personlig.
-Avsluta med "Behöver du hjälp med något mer?" på kundens språk.
+Svara ALLTID på exakt samma språk som kundens senaste fråga.
+Översätt ALL information från kunskapsbasen till frågans språk – behåll exakt betydelse och struktur.
+Var professionell men personlig – använd "du" på svenska eller motsvarande på andra språk.
 
-Exempel:
-- Engelska fråga: Översätt till engelska och svara på engelska.
-- Norska fråga: Översätt till norska och svara på norska.
-- Finska fråga: Översätt till finska och svara på finska.
-- Arabiska fråga: Översätt till arabiska och svara på arabiska.
+Om svaret kan variera beroende på produkt, betalterminal eller annan faktor (t.ex. olika modeller eller konfigurationer), fråga efter förtydligande för att ge bästa möjliga hjälp, t.ex. "Vilken betalterminal eller produkt avser du?"
 
-Du FÅR INTE hitta på information. Använd ENDAST kunskapsbasen.
-Om ingen relevant info: Svara på kundens språk: "Jag kunde tyvärr inte hitta information om detta i vår kunskapsbas. Kontakta support@fortuspay.se för hjälp."
+Kom ihåg tidigare meddelanden i konversationen för att undvika upprepning och ge mer personliga svar.
 
-Kunskapsbas (översätt till kundens språk):
+Använd ENDAST information från kunskapsbasen nedan för att svara.
+Avsluta VARJE svar med: "Detta är ett AI-genererat svar. För bindande råd, kontakta support@fortuspay.se."
+
+Om du inte hittar svar: "Jag kunde tyvärr inte hitta information om detta i vår kunskapsbas. Kontakta support@fortuspay.se för hjälp."
+
+Kunskapsbas:
 ${context}`
     };
 
@@ -94,7 +91,7 @@ ${context}`
     console.log('Sending to Groq with messages count:', groqMessages.length);
 
     const completion = await groq.chat.completions.create({
-      model: 'llama-3.3-70b-versatile', // Bättre på multilingual och översättning!
+      model: 'llama-3.1-8b-instant',
       messages: groqMessages,
       temperature: 0.3,
       max_tokens: 1024,
