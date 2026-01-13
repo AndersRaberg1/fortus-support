@@ -12,7 +12,7 @@ const hf = new HfInference(process.env.HF_TOKEN);
 
 async function syncKB() {
   try {
-    // Dynamisk import – detta löser build-felet med google-spreadsheet
+    // Dynamisk import – detta löser build-felet helt
     const { GoogleSpreadsheet } = await import('google-spreadsheet');
 
     const doc = new GoogleSpreadsheet('1DskBGn-cvbEn30NKBpyeueOvowB8-YagnTACz9LIChk');
@@ -24,12 +24,10 @@ async function syncKB() {
 
     await doc.loadInfo();
 
-    // Första fliken – byt till doc.sheetsByTitle['Fliknamn'] om ni använder annan
-    const sheet = doc.sheetsByIndex[0];
+    const sheet = doc.sheetsByIndex[0]; // Byt till annan flik vid behov
 
     const rows = await sheet.getRows();
 
-    // Radera alla gamla vectors för en ren synk
     try {
       await index.delete({ deleteAll: true });
       console.log('Raderade alla gamla vectors');
@@ -40,7 +38,6 @@ async function syncKB() {
     const vectorsToUpsert = [];
 
     for (const row of rows) {
-      // ÄNDRA HÄR till era exakta kolumnnamn (case-sensitive!)
       const question = (row.get('Fråga') || row.get('Question') || '').trim();
       const answer = (row.get('Svar') || row.get('Answer') || '').trim();
       const category = (row.get('Kategori') || row.get('Category') || 'allmänt').trim();
