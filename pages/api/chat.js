@@ -1,4 +1,5 @@
 import { Pinecone } from '@pinecone-database/pinecone';
+import { Groq } from 'groq-sdk';
 import { HfInference } from '@huggingface/inference';
 
 const pinecone = new Pinecone({
@@ -13,7 +14,7 @@ const groq = new Groq({
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
-    return res.status(405).end();
+    return res.status(405).json({ error: 'Method not allowed' });
   }
 
   const { messages } = req.body;
@@ -23,13 +24,12 @@ export default async function handler(req, res) {
   }
 
   const latestUserMessage = [...messages].reverse().find(m => m.role === 'user')?.content || '';
-
+  
   if (!latestUserMessage.trim()) {
     return res.status(400).json({ error: 'No user message found' });
   }
 
   try {
-    // RAG-del (oförändrad)
     const queryEmbeddingResponse = await hf.featureExtraction({
       model: 'intfloat/multilingual-e5-large',
       inputs: `query: ${latestUserMessage}`,
@@ -59,16 +59,9 @@ export default async function handler(req, res) {
     const systemPrompt = {
       role: 'system',
       content: `Du är en hjälpsam, vänlig och artig supportagent för FortusPay.
-Svara ALLTID på EXAKT samma språk som kundens senaste fråga – högsta prioritet, ingen undantag.
-Översätt HELA kunskapsbasen och svaret till kundens språk. Behåll exakt betydelse, struktur, numrering och detaljer.
-Var professionell men personlig.
-Avsluta med "Behöver du hjälp med något mer?" på kundens språk.
-
-Om svaret kan variera beroende på produkt/terminal, fråga efter förtydligande.
-
-Använd ENDAST kunskapsbasen. Avsluta varje svar med: "Detta är ett AI-genererat svar. För bindande råd, kontakta support@fortuspay.se."
-
-Om ingen info: Svara på kundens språk: "Jag kunde tyvärr inte hitta information om detta i vår kunskapsbas. Kontakta support@fortuspay.se för hjälp."
+Svara ALLTID på EXAKT samma språk som kundens senaste fråga – högsta prioritet.
+Översätt HELA kunskapsbasen till kundens språk. Behåll struktur och detaljer.
+Avsluta med "Behöver du hjälp med något mer?" på kundens språk + "Detta är ett AI-genererat svar. För bindande råd, kontakta support@fortuspay.se."
 
 Kunskapsbas (översätt till kundens språk):
 ${context}`
@@ -76,31 +69,20 @@ ${context}`
 
     const groqMessages = [systemPrompt, ...messages];
 
-    // Streaming response
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-
-    const stream = await groq.chat.completions.create({
-      model: 'llama-3.3-70b-versatile', // Ny stark modell
+    const completion = await groq.chat.completions.create({
+      model: 'llama-3.3-70b-versatile', // Stark multilingual modell
       messages: groqMessages,
       temperature: 0.3,
       max_tokens: 1024,
-      stream: true,
+      stream: false, // Non-streaming för stabilitet
     });
 
-    for await (const chunk of stream) {
-      const content = chunk.choices[0]?.delta?.content || '';
-      if (content) {
-        res.write(`data: ${content}\n\n`);
-      }
-    }
+    const answer = completion.choices[0]?.message?.content || 'Inget svar.';
 
-    res.write('data: [DONE]\n\n');
-    res.end();
+    res.status(200).json({ answer });
   } catch (error) {
     console.error('Error:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ error: 'Internal server error', details: error.message });
   }
 }
 
