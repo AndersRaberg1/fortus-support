@@ -12,7 +12,7 @@ const hf = new HfInference(process.env.HF_TOKEN);
 
 async function syncKB() {
   try {
-    // DYNAMISK IMPORT – detta fixar build-felet helt
+    // Dynamisk import – detta är fixen för build-felet
     const { GoogleSpreadsheet } = await import('google-spreadsheet');
 
     const doc = new GoogleSpreadsheet('1DskBGn-cvbEn30NKBpyeueOvowB8-YagnTACz9LIChk');
@@ -24,10 +24,11 @@ async function syncKB() {
 
     await doc.loadInfo();
 
-    const sheet = doc.sheetsByIndex[0]; // Ändra om annan flik
+    const sheet = doc.sheetsByIndex[0]; // Byt till annan flik vid behov
 
     const rows = await sheet.getRows();
 
+    // Radera gamla vectors för ren synk
     try {
       await index.delete({ deleteAll: true });
       console.log('Raderade alla gamla vectors');
