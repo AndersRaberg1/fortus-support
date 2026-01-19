@@ -14,5 +14,6 @@
     "@huggingface/inference": "^4.13.5",
     "prisma": "^5.8.1",
     "@prisma/client": "^5.8.1"
+    
   }
 }
